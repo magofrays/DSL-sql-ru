@@ -11,7 +11,7 @@ repositories {
 dependencies {
     testImplementation(libs.junit)
     implementation(libs.guava)
-    implementation("com.github.demidko:aot:2025.11.25")
+    implementation("ru.stachek66.nlp:mystem-scala:0.1.6")
 }
 
 java {
