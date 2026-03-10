@@ -16,8 +16,8 @@ public class DSLTree {
 
     private Set<String> failGrammemes;
 
-    public DSLTree(List<Token> tokens, Integer index) {
-        this.tokens = tokens;
+    public DSLTree(List<String> strTokens, Integer index) {
+        tokens = strTokens.stream().map(Token::new).toList();
         this.index = index;
         node = createStatement();
     }
@@ -46,7 +46,7 @@ public class DSLTree {
         Node action = createAction(); // действие
         children.add(action);
         next();
-        Node recipients = createRecipients(); // цели, для кого
+        Node recipients = createListRecipients(); // цели, для кого
         if(recipients != null){
             children.add(recipients);
             next();
@@ -63,11 +63,12 @@ public class DSLTree {
         if(preposition == null){
             throwException();
         }
+        children.add(preposition);
         next();
         Node listStorage = createListStorages(); // откуда достать
         children.add(listStorage);
         next();
-        Node listFilter = createListFilter();
+        Node listFilter = createListFilter(); // условия
         if(listFilter != null){
             children.add(listFilter);
         }
@@ -94,18 +95,19 @@ public class DSLTree {
         }
         Node filter = createFilter();
         next();
-        if(index < tokens.size()){
+        if(index >= tokens.size()){
             return filter;
         }
         Node union = createUnion();
         if(union == null){
             return filter;
         }
+        next();
         List<Node> children = new ArrayList<>();
         children.add(filter);
         children.add(union);
         Node listFilter = createListFilter();
-        children.addAll(listFilter.getChildren() == null ? List.of(listFilter) : listFilter.getChildren());
+        children.addAll(listFilter.getName().equals("LIST FILTER") ? listFilter.getChildren() : List.of(listFilter));
         return Node.builder()
                 .name("LIST FILTER")
                 .children(children)
@@ -117,24 +119,109 @@ public class DSLTree {
         if(advpro == null){
             throwException();
         }
-        next(); //todo
+        next();
+
         List<Node> children = new ArrayList<>();
+
+        children.add(advpro);
+        Node adverbial = createAdverbial();
+        children.add(adverbial);
+        return Node.builder().name("FILTER").children(children).build();
+    }
+
+    private Node createPart(){
         failGrammemes = Set.of("PART");
-        if(advpro.getGrammemes().containsAll(failGrammemes)){
-            children.add(advpro);
+        if(current().getGrammemes().containsAll(failGrammemes)){
+            return Node.builder()
+                    .name("PART")
+                    .grammemes(current().getGrammemes())
+                    .value(current().getValue())
+                    .build();
         }
+        return null;
+    }
+
+    private Node createAdverbial() {
+        List<Node> children = new ArrayList<>();
+        Node part = createPart();
+        if(part != null){
+            next();
+            children.add(part);
+            failGrammemes = Set.of("S", "род");
+            Token current = current();
+            if(current.getGrammemes().containsAll(failGrammemes)){
+                Node arg = Node.builder()
+                        .name("NOUN")
+                        .grammemes(current().getGrammemes())
+                        .value(current().getValue())
+                        .build();
+                children.add(arg);
+            } // нет арбуза нет персиков
+            else{
+                throwException();
+            }
+            return Node.builder()
+                    .name("ADVERBIAL")
+                    .children(children).build();
+        }
+
+        failGrammemes = Set.of("S", "род");
+        if(current().getGrammemes().containsAll(failGrammemes)){
+            Node arg = Node.builder()
+                    .name("NOUN")
+                    .grammemes(current().getGrammemes())
+                    .value(current().getValue())
+                    .build();
+            children.add(arg);
+        }
+        else {
+            throwException();
+        }
+        next();
+        part = createPart();
+        if(part != null){
+            children.add(part);
+            next();
+        }
+        failGrammemes = Set.of("ADV");
+        if(current().getGrammemes().containsAll(failGrammemes)){
+            Node adv = Node.builder()
+                    .name("ADV")
+                    .grammemes(current().getGrammemes())
+                    .value(current().getValue())
+                    .build();
+            children.add(adv);
+        }
+        else{
+            throwException();
+        }
+        next();
+        Node quantifier = createQuantifier();
+        if(quantifier == null){
+            throwException();
+        }
+        children.add(quantifier);
+        return Node.builder()
+                .name("ADVERBIAL")
+                .children(children)
+                .build();
     }
 
     private Node createListStorages() {
         Node storage = createStorage();
         next();
-        Node preposition = createPreposition();
-        if(preposition == null){
+        List<Node> children = new ArrayList<>();
+        if (index >= tokens.size()) {
             before();
             return storage;
         }
-        List<Node> children = new ArrayList<>();
+        Node union = createUnion();
+        if(union == null){
+            before();
+            return storage;
+        }
         children.add(storage);
+        children.add(union);
         next();
         var storages = createListStorages();
         children.addAll(storages.getChildren() == null ? List.of(storages) : storages.getChildren());
@@ -143,7 +230,7 @@ public class DSLTree {
 
     private Node createStorage() {
         Token current = current();
-        failGrammemes = Set.of("S", "мн", "род");
+        failGrammemes = Set.of("S", "род");
         if(current.getGrammemes().containsAll(failGrammemes)){
             return Node.builder()
                     .name("STORAGE")
@@ -151,7 +238,7 @@ public class DSLTree {
                     .grammemes(current.getGrammemes())
                     .build();
         }
-        failGrammemes = Set.of("S", "ед", "род");
+        failGrammemes = Set.of("S", "пр");
         if(current.getGrammemes().containsAll(failGrammemes)){
             return Node.builder()
                     .name("STORAGE")
@@ -185,8 +272,10 @@ public class DSLTree {
             before();
             return subject;
         }
+
         next();
         List<Node> children = new ArrayList<>();
+        children.add(union);
         children.add(subject);
         Node listSubjects = createListSubjects();
         children.addAll(listSubjects.getChildren() == null ? List.of(listSubjects) : listSubjects.getChildren());
@@ -198,16 +287,16 @@ public class DSLTree {
 
     private Node createSubject(){
         Token current = current();
-        failGrammemes = Set.of("S", "род", "мн");
-        if(current().getGrammemes().containsAll(failGrammemes)){
+        failGrammemes = Set.of("S", "род");
+        if(current.getGrammemes().containsAll(failGrammemes)){
             return Node.builder()
                     .name("SUBJECT")
                     .value(current.getValue())
                     .grammemes(current.getGrammemes())
                     .build();
         }
-        failGrammemes = Set.of("S", "вин", "ед");
-        if(current().getGrammemes().containsAll(failGrammemes)){
+        failGrammemes = Set.of("S", "вин");
+        if(current.getGrammemes().containsAll(failGrammemes)){
             return Node.builder()
                     .name("SUBJECT")
                     .value(current.getValue())
@@ -219,8 +308,7 @@ public class DSLTree {
 
     private Node createQuantifier() {
         var current = current();
-        if(current.getGrammemes().containsAll(Set.of("им", "NUM")) ||
-            current.getGrammemes().containsAll(Set.of("вин", "NUM"))){
+        if(current.getGrammemes().containsAll(Set.of("NUM"))){
             return Node.builder()
                     .name("QUANTIFIER")
                     .grammemes(current.getGrammemes())
@@ -263,23 +351,24 @@ public class DSLTree {
         return null;
     }
 
-    private Node createRecipients() {
+    private Node createListRecipients() {
         Node recipient = createRecipient();
         if(recipient == null) return null;
         List<Node> children = new ArrayList<>();
         children.add(recipient);
         next();
+
         Node union = createUnion();
-        if (union != null){
-            next();
-            Node chRecipients = createRecipients();
-            children.addAll(chRecipients.getChildren() == null ? List.of(chRecipients) : chRecipients.getChildren());
-        }
-        else {
+        if(union == null) {
             before();
-        }
+            return recipient;}
+
+        next();
+        children.add(union);
+        Node chRecipients = createListRecipients();
+        children.addAll(chRecipients.getChildren() == null ? List.of(chRecipients) : chRecipients.getChildren());
         return Node.builder()
-                .name("RECIPIENTS")
+                .name("LIST RECIPIENTS")
                 .children(children)
                 .build();
     }
@@ -311,7 +400,8 @@ public class DSLTree {
 
     private Node createPreposition() {
         Token current = current();
-        if(current.getGrammemes().contains("PR")){
+        failGrammemes = Set.of("PR");
+        if(current.getGrammemes().containsAll(failGrammemes) || current.getValue().equals("в")){
             return Node.builder()
                     .name("PREPOSITION")
                     .value(current.getValue())
